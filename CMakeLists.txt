@@ -23,9 +23,10 @@ add_subdirectory(webui)
 add_executable(DeepSeek src/deepseek.c)
 target_link_libraries(DeepSeek webui)
 
-if(WIN32 AND EXISTS icons/deepseek.rc)
+if(WIN32)
 	# linux cmake cant recognize .rc file
 	# NOTE: Use MSVC CMake instead of mingw version if build failed here
+	message(STATUS "Enabled DeepSeek icon")
 	target_sources(DeepSeek PRIVATE icons/deepseek.rc)
 endif()
 
