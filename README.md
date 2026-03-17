@@ -1,6 +1,8 @@
 # Wapt - Web Application Packaging Toolkit
 
-It helps to package web applications into a single executable file via [Webui](https://webui.me).
+[中文](README_zh.md) | English
+
+It helps to package Web URL into a single executable file via [Webui](https://webui.me).
 
 ## How to build
 
@@ -22,9 +24,9 @@ Then, you can find the executable file in the `build` directory.
 You can just run the executable file to start the web application.
 **That's it! Simple as that!**
 
-## How to add a new web application
+## How to add a new Web URL
 
-Just use the `add_url.py` script to add a new web application.
+Just use the `add_url.py` script to add a new Web URL.
 
 ```bash
 # Interactive mode
