@@ -18,7 +18,7 @@ endif()
 
 project(WebUI-Impl)
 
-add_subdirectory(webui)
+add_subdirectory(thirdlib/webui-f25b022)
 
 add_executable(DeepSeek src/deepseek.c)
 target_link_libraries(DeepSeek webui)
