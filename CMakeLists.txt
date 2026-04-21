@@ -18,7 +18,10 @@ endif()
 
 project(WebUI-Impl)
 
-add_subdirectory(thirdlib/webui-f25b022)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
+add_subdirectory(thirdlib/webui-2f7e622 EXCLUDE_FROM_ALL)
 
 add_executable(DeepSeek src/deepseek.c)
 target_link_libraries(DeepSeek webui)
@@ -72,14 +75,26 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Deb")
 	endif()
 endif()
 
-add_executable(Kimi src/kimi.c)
-target_link_libraries(Kimi webui)
+add_executable(AstrBotDB src/astrbotdb.c)
+target_link_libraries(AstrBotDB webui)
 
-if(WIN32 AND EXISTS icons/kimi.rc)
+if(NOT CMAKE_BUILD_TYPE MATCHES "Deb")
+	if(MSVC)
+		target_link_options(AstrBotDB PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
+	else()
+		target_link_options(AstrBotDB PRIVATE -mwindows) # -mconsole
+	endif()
+endif()
+
+if(WIN32)
 	# linux cmake cant recognize .rc file
 	# NOTE: Use MSVC CMake instead of mingw version if build failed here
-	target_sources(Kimi PRIVATE icons/kimi.rc)
+	message(STATUS "Enabled AstrBotDB icon")
+	target_sources(AstrBotDB PRIVATE icons/astrbotdb.rc)
 endif()
+
+add_executable(Kimi src/kimi.c)
+target_link_libraries(Kimi webui)
 
 if(NOT CMAKE_BUILD_TYPE MATCHES "Deb")
 	if(MSVC)
@@ -87,4 +102,11 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Deb")
 	else()
 		target_link_options(Kimi PRIVATE -mwindows) # -mconsole
 	endif()
+endif()
+
+if(WIN32)
+	# linux cmake cant recognize .rc file
+	# NOTE: Use MSVC CMake instead of mingw version if build failed here
+	message(STATUS "Enabled Kimi icon")
+	target_sources(Kimi PRIVATE icons/kimi.rc)
 endif()

@@ -2,7 +2,7 @@
 
 int main() {
 	size_t my_window = webui_new_window();
-	webui_show(my_window, "https://www.kimi.com");
+	webui_show(my_window, "http://localhost:6185");
 	webui_clean();
 	return 0;
 }

@@ -28,6 +28,12 @@ You can just run the executable file to start the web application.
 
 Just use the `add_url.py` script to add a new Web URL.
 
+First, you *must* enter the project directory.
+
+```bash
+cd Wapt
+```
+
 ```bash
 # Interactive mode
 python add_url.py
