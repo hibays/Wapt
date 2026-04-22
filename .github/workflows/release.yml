@@ -1,0 +1,164 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Match tags like v1.0.0, v2.1.3, etc.
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            zip_suffix: windows_amd_x64
+            exe_ext: .exe
+            cmake_generator: Visual Studio 17 2022
+            cmake_arch: x64
+          - os: ubuntu-latest
+            zip_suffix: ubuntu_amd_x64
+            exe_ext: ''
+            cmake_generator: Unix Makefiles
+            cmake_arch: ''
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install build tools (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake gcc g++ make zip
+
+    - name: Install build tools (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        # Check for CMake, install if needed
+        if ! cmake --version; then
+          echo "CMake not found, attempting to install via Chocolatey..."
+          # Try to install CMake, but don't fail if Chocolatey is not available
+          choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y || echo "CMake installation failed, continuing with Visual Studio's CMake (if available)"
+        fi
+
+    - name: Configure CMake
+      run: |
+        mkdir build
+        cd build
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          cmake .. -G "${{ matrix.cmake_generator }}" -A "${{ matrix.cmake_arch }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+        else
+          cmake .. -G "${{ matrix.cmake_generator }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+        fi
+
+    - name: Build
+      run: |
+        cd build
+        cmake --build . --config ${{ env.BUILD_TYPE }} --parallel
+
+    - name: Discover applications
+      id: discover_apps
+      run: |
+        # Get all application names from src/ subdirectories
+        cd src
+        apps=()
+        for dir in */; do
+          if [ -d "$dir" ]; then
+            app=$(basename "$dir")
+            apps+=("$app")
+          fi
+        done
+        # Output as comma-separated list
+        apps_csv=$(IFS=','; echo "${apps[*]}")
+        echo "apps=${apps_csv}" >> $GITHUB_OUTPUT
+        echo "Discovered applications: ${apps[@]}"
+
+    - name: Package executables
+      id: package
+      run: |
+        cd build
+        # Read apps from previous step (comma-separated)
+        IFS=',' read -ra apps <<< "${{ steps.discover_apps.outputs.apps }}"
+
+        zip_files=""
+        for app in "${apps[@]}"; do
+          # Find the executable (search recursively)
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            # Windows: look for .exe, prefer Release directory
+            exe_path=$(find . -path "*/Release/*" -name "${app}${{ matrix.exe_ext }}" -type f | head -1)
+            if [ -z "$exe_path" ]; then
+              exe_path=$(find . -name "${app}${{ matrix.exe_ext }}" -type f | grep -v Debug | head -1)
+            fi
+          else
+            # Linux: look for executable file with same name as app
+            exe_path=$(find . -type f -name "${app}" -executable | head -1)
+          fi
+
+          if [ -n "$exe_path" ] && [ -f "$exe_path" ]; then
+            zip_name="${app}_${{ matrix.zip_suffix }}.zip"
+            echo "Packaging $exe_path -> $zip_name"
+
+            if [ "${{ matrix.os }}" = "windows-latest" ]; then
+              # Use PowerShell Compress-Archive
+              powershell -Command "Compress-Archive -Path '$exe_path' -DestinationPath '$zip_name' -Force"
+            else
+              zip "$zip_name" "$exe_path"
+            fi
+
+            zip_files="$zip_files $zip_name"
+          else
+            echo "Warning: Executable for $app not found"
+          fi
+        done
+
+        # Output list of zip files (space separated)
+        echo "zip_files=${zip_files}" >> $GITHUB_OUTPUT
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.os }}-binaries
+        path: build/*.zip
+        retention-days: 5
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    steps:
+    - name: Download Windows artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: windows-latest-binaries
+        path: artifacts/windows
+
+    - name: Download Ubuntu artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: ubuntu-latest-binaries
+        path: artifacts/ubuntu
+
+    - name: Prepare release assets
+      run: |
+        # Move all zip files to a common directory
+        mkdir -p release_assets
+        find artifacts -name "*.zip" -exec cp {} release_assets/ \;
+        echo "Release assets:"
+        ls -la release_assets/
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release_assets/*.zip
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
