@@ -22,7 +22,7 @@ function(add_webui_app app_name)
     endif()
 
     # Add executable
-    message(STATUS "Adding WebUI application: ${app_name}")
+    message(STATUS "Adding WebUI application: ${app_name} (Platform: ${CMAKE_SYSTEM_NAME}, Compiler: ${CMAKE_C_COMPILER_ID})")
     add_executable(${app_name} ${src_file})
     target_link_libraries(${app_name} webui)
 
@@ -40,14 +40,12 @@ function(add_webui_app app_name)
         endif()
     endif()
 
-    # Set window subsystem for non-debug builds
-    if(NOT CMAKE_BUILD_TYPE MATCHES "Deb")
-        if(MSVC)
-            target_link_options(${app_name} PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
-        else()
-            target_link_options(${app_name} PRIVATE -mwindows) # -mconsole
-        endif()
-    endif()
+    # Set window subsystem for non-debug builds (Windows only)
+    # Use generator expressions to conditionally apply linker options based on platform and compiler
+    target_link_options(${app_name} PRIVATE
+        $<$<AND:$<PLATFORM_ID:Windows>,$<NOT:$<CONFIG:Debug>>,$<C_COMPILER_ID:MSVC>>:/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup>
+        $<$<AND:$<PLATFORM_ID:Windows>,$<NOT:$<CONFIG:Debug>>,$<C_COMPILER_ID:GNU>>:-mwindows>
+    )
 endfunction()
 
 # discover_webui_apps()
