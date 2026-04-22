@@ -30,7 +30,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        submodules: recursive
+        submodules: false
 
     - name: Install build tools (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
