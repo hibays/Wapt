@@ -7,6 +7,7 @@ on:
 
 env:
   BUILD_TYPE: Release
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -25,6 +26,7 @@ jobs:
             exe_ext: ''
             cmake_generator: Unix Makefiles
             cmake_arch: ''
+      fail-fast: false
 
     steps:
     - name: Checkout repository
@@ -34,6 +36,7 @@ jobs:
 
     - name: Install build tools (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
+      shell: bash
       run: |
         sudo apt-get update
         sudo apt-get install -y cmake gcc g++ make zip
@@ -42,13 +45,18 @@ jobs:
       if: matrix.os == 'windows-latest'
       run: |
         # Check for CMake, install if needed
-        if ! cmake --version; then
+        if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
           echo "CMake not found, attempting to install via Chocolatey..."
           # Try to install CMake, but don't fail if Chocolatey is not available
-          choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y || echo "CMake installation failed, continuing with Visual Studio's CMake (if available)"
-        fi
+          try {
+            choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
+          } catch {
+            echo "CMake installation failed, continuing with Visual Studio's CMake (if available)"
+          }
+        }
 
     - name: Configure CMake
+      shell: bash
       run: |
         mkdir build
         cd build
@@ -59,12 +67,14 @@ jobs:
         fi
 
     - name: Build
+      shell: bash
       run: |
         cd build
         cmake --build . --config ${{ env.BUILD_TYPE }} --parallel
 
     - name: Discover applications
       id: discover_apps
+      shell: bash
       run: |
         # Get all application names from src/ subdirectories
         cd src
@@ -82,6 +92,7 @@ jobs:
 
     - name: Package executables
       id: package
+      shell: bash
       run: |
         cd build
         # Read apps from previous step (comma-separated)
