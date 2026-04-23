@@ -1,8 +1,10 @@
 #include "webui.h"
 
+#define TARGET_URL "https://www.desmos.com/calculator"
+
 int main() {
 	size_t my_window = webui_new_window();
-	webui_show(my_window, "https://www.desmos.com/calculator?lang=zh-CN");
+	webui_show(my_window, TARGET_URL);
 	webui_clean();
 	return 0;
 }
