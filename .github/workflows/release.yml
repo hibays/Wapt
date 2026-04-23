@@ -165,11 +165,49 @@ jobs:
         echo "Release assets:"
         ls -la release_assets/
 
+    - name: Generate release notes
+      id: generate_release_notes
+      shell: bash
+      run: |
+        # Get current tag
+        CURRENT_TAG="${{ github.ref_name }}"
+        echo "Current tag: $CURRENT_TAG"
+
+        # Get previous tag (excluding the current one)
+        PREVIOUS_TAG=$(git describe --tags --abbrev=0 "$CURRENT_TAG"^ 2>/dev/null || echo "")
+
+        if [ -z "$PREVIOUS_TAG" ]; then
+          # If no previous tag found, get all commits from the beginning
+          echo "No previous tag found, showing all commits"
+          CHANGELOG=$(git log --oneline --pretty=format:"- %s (%h)" HEAD)
+        else
+          echo "Previous tag: $PREVIOUS_TAG"
+          # Get commits between previous tag and current tag
+          CHANGELOG=$(git log --oneline --pretty=format:"- %s (%h)" "$PREVIOUS_TAG".."$CURRENT_TAG")
+        fi
+
+        # Create release notes file
+        echo "## Changes since $PREVIOUS_TAG" > release_notes.md
+        echo "" >> release_notes.md
+        echo "$CHANGELOG" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "### Full commit list" >> release_notes.md
+        echo "\`\`\`" >> release_notes.md
+        echo "$CHANGELOG" >> release_notes.md
+        echo "\`\`\`" >> release_notes.md
+
+        # Output release notes content
+        RELEASE_NOTES=$(cat release_notes.md)
+        echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+        echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: release_assets/*.zip
         draft: false
         prerelease: false
+        body: ${{ steps.generate_release_notes.outputs.release_notes }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
