@@ -3,7 +3,7 @@ name: Build and Release
 on:
   push:
     tags:
-      - 'v*'  # Match tags like v1.0.0, v2.1.3, etc.
+      - "v*" # Match tags like v1.0.0, v2.1.3, etc.
 
 env:
   BUILD_TYPE: Release
@@ -14,7 +14,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [ windows-latest, ubuntu-latest, macos-latest ]
         include:
           - os: windows-latest
             zip_suffix: windows_amd_x64
@@ -23,121 +23,137 @@ jobs:
             cmake_arch: x64
           - os: ubuntu-latest
             zip_suffix: ubuntu_amd_x64
-            exe_ext: ''
+            exe_ext: ""
             cmake_generator: Unix Makefiles
-            cmake_arch: ''
+            cmake_arch: ""
+          - os: macos-latest
+            zip_suffix: macos_universal
+            exe_ext: ""
+            cmake_generator: Unix Makefiles
+            cmake_arch: ""
       fail-fast: false
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        submodules: false
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
 
-    - name: Install build tools (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
-      shell: bash
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y cmake gcc g++ make zip
+      - name: Install build tools (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc g++ make zip
 
-    - name: Install build tools (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        # Check for CMake, install if needed
-        if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
-          echo "CMake not found, attempting to install via Chocolatey..."
-          # Try to install CMake, but don't fail if Chocolatey is not available
-          try {
-            choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
-          } catch {
-            echo "CMake installation failed, continuing with Visual Studio's CMake (if available)"
+      - name: Install build tools (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          # Check for CMake, install if needed
+          if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+            echo "CMake not found, attempting to install via Chocolatey..."
+            # Try to install CMake, but don't fail if Chocolatey is not available
+            try {
+              choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
+            } catch {
+              echo "CMake installation failed, continuing with Visual Studio's CMake (if available)"
+            }
           }
-        }
 
-    - name: Configure CMake
-      shell: bash
-      run: |
-        mkdir build
-        cd build
-        if [ "${{ matrix.os }}" = "windows-latest" ]; then
-          cmake .. -G "${{ matrix.cmake_generator }}" -A "${{ matrix.cmake_arch }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
-        else
-          cmake .. -G "${{ matrix.cmake_generator }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
-        fi
+      - name: Install build tools (macOS)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          brew update
+          brew install cmake gcc make zip
 
-    - name: Build
-      shell: bash
-      run: |
-        cd build
-        cmake --build . --config ${{ env.BUILD_TYPE }} --parallel
-
-    - name: Discover applications
-      id: discover_apps
-      shell: bash
-      run: |
-        # Get all application names from src/ subdirectories
-        cd src
-        apps=()
-        for dir in */; do
-          if [ -d "$dir" ]; then
-            app=$(basename "$dir")
-            apps+=("$app")
-          fi
-        done
-        # Output as comma-separated list
-        apps_csv=$(IFS=','; echo "${apps[*]}")
-        echo "apps=${apps_csv}" >> $GITHUB_OUTPUT
-        echo "Discovered applications: ${apps[@]}"
-
-    - name: Package executables
-      id: package
-      shell: bash
-      run: |
-        cd build
-        # Read apps from previous step (comma-separated)
-        IFS=',' read -ra apps <<< "${{ steps.discover_apps.outputs.apps }}"
-
-        zip_files=""
-        for app in "${apps[@]}"; do
-          # Find the executable (search recursively)
+      - name: Configure CMake
+        shell: bash
+        run: |
+          mkdir build
+          cd build
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            # Windows: look for .exe, prefer Release directory
-            exe_path=$(find . -path "*/Release/*" -name "${app}${{ matrix.exe_ext }}" -type f | head -1)
-            if [ -z "$exe_path" ]; then
-              exe_path=$(find . -name "${app}${{ matrix.exe_ext }}" -type f | grep -v Debug | head -1)
-            fi
+            cmake .. -G "${{ matrix.cmake_generator }}" -A "${{ matrix.cmake_arch }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
           else
-            # Linux: look for executable file with same name as app
-            exe_path=$(find . -type f -name "${app}" -executable | head -1)
-          fi
-
-          if [ -n "$exe_path" ] && [ -f "$exe_path" ]; then
-            zip_name="${app}_${{ matrix.zip_suffix }}.zip"
-            echo "Packaging $exe_path -> $zip_name"
-
-            if [ "${{ matrix.os }}" = "windows-latest" ]; then
-              # Use PowerShell Compress-Archive
-              powershell -Command "Compress-Archive -Path '$exe_path' -DestinationPath '$zip_name' -Force"
+            if [ "${{ matrix.os }}" = "macos-latest" ]; then
+              cmake .. -G "${{ matrix.cmake_generator }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
             else
-              zip "$zip_name" "$exe_path"
+              cmake .. -G "${{ matrix.cmake_generator }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+            fi
+          fi
+
+      - name: Build
+        shell: bash
+        run: |
+          cd build
+          cmake --build . --config ${{ env.BUILD_TYPE }} --parallel
+
+      - name: Discover applications
+        id: discover_apps
+        shell: bash
+        run: |
+          # Get all application names from src/ subdirectories
+          cd src
+          apps=()
+          for dir in */; do
+            if [ -d "$dir" ]; then
+              app=$(basename "$dir")
+              apps+=("$app")
+            fi
+          done
+          # Output as comma-separated list
+          apps_csv=$(IFS=','; echo "${apps[*]}")
+          echo "apps=${apps_csv}" >> $GITHUB_OUTPUT
+          echo "Discovered applications: ${apps[@]}"
+
+      - name: Package executables
+        id: package
+        shell: bash
+        run: |
+          cd build
+          # Read apps from previous step (comma-separated)
+          IFS=',' read -ra apps <<< "${{ steps.discover_apps.outputs.apps }}"
+
+          zip_files=""
+          for app in "${apps[@]}"; do
+            # Find the executable (search recursively)
+            if [ "${{ matrix.os }}" = "windows-latest" ]; then
+              # Windows: look for .exe, prefer Release directory
+              exe_path=$(find . -path "*/Release/*" -name "${app}${{ matrix.exe_ext }}" -type f | head -1)
+              if [ -z "$exe_path" ]; then
+                exe_path=$(find . -name "${app}${{ matrix.exe_ext }}" -type f | grep -v Debug | head -1)
+              fi
+            else
+              # Linux/macOS: look for executable file with same name as app
+              exe_path=$(find . -type f -name "${app}" -perm +111 | head -1)
             fi
 
-            zip_files="$zip_files $zip_name"
-          else
-            echo "Warning: Executable for $app not found"
-          fi
-        done
+            if [ -n "$exe_path" ] && [ -f "$exe_path" ]; then
+              zip_name="${app}_${{ matrix.zip_suffix }}.zip"
+              echo "Packaging $exe_path -> $zip_name"
 
-        # Output list of zip files (space separated)
-        echo "zip_files=${zip_files}" >> $GITHUB_OUTPUT
+              if [ "${{ matrix.os }}" = "windows-latest" ]; then
+                # Use PowerShell Compress-Archive
+                powershell -Command "Compress-Archive -Path '$exe_path' -DestinationPath '$zip_name' -Force"
+              else
+                zip "$zip_name" "$exe_path"
+              fi
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.os }}-binaries
-        path: build/*.zip
-        retention-days: 5
+              zip_files="$zip_files $zip_name"
+            else
+              echo "Warning: Executable for $app not found"
+            fi
+          done
+
+          # Output list of zip files (space separated)
+          echo "zip_files=${zip_files}" >> $GITHUB_OUTPUT
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-binaries
+          path: build/*.zip
+          retention-days: 5
 
   release:
     runs-on: ubuntu-latest
@@ -145,69 +161,75 @@ jobs:
     permissions:
       contents: write
     steps:
-    - name: Download Windows artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: windows-latest-binaries
-        path: artifacts/windows
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-latest-binaries
+          path: artifacts/windows
 
-    - name: Download Ubuntu artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: ubuntu-latest-binaries
-        path: artifacts/ubuntu
+      - name: Download Ubuntu artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ubuntu-latest-binaries
+          path: artifacts/ubuntu
 
-    - name: Prepare release assets
-      run: |
-        # Move all zip files to a common directory
-        mkdir -p release_assets
-        find artifacts -name "*.zip" -exec cp {} release_assets/ \;
-        echo "Release assets:"
-        ls -la release_assets/
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-latest-binaries
+          path: artifacts/macos
 
-    - name: Generate release notes
-      id: generate_release_notes
-      shell: bash
-      run: |
-        # Get current tag
-        CURRENT_TAG="${{ github.ref_name }}"
-        echo "Current tag: $CURRENT_TAG"
+      - name: Prepare release assets
+        run: |
+          # Move all zip files to a common directory
+          mkdir -p release_assets
+          find artifacts -name "*.zip" -exec cp {} release_assets/ \;
+          echo "Release assets:"
+          ls -la release_assets/
 
-        # Get previous tag (excluding the current one)
-        PREVIOUS_TAG=$(git describe --tags --abbrev=0 "$CURRENT_TAG"^ 2>/dev/null || echo "")
+      - name: Generate release notes
+        id: generate_release_notes
+        shell: bash
+        run: |
+          # Get current tag
+          CURRENT_TAG="${{ github.ref_name }}"
+          echo "Current tag: $CURRENT_TAG"
 
-        if [ -z "$PREVIOUS_TAG" ]; then
-          # If no previous tag found, get all commits from the beginning
-          echo "No previous tag found, showing all commits"
-          CHANGELOG=$(git log --oneline --pretty=format:"- %s (%h)" HEAD)
-        else
-          echo "Previous tag: $PREVIOUS_TAG"
-          # Get commits between previous tag and current tag
-          CHANGELOG=$(git log --oneline --pretty=format:"- %s (%h)" "$PREVIOUS_TAG".."$CURRENT_TAG")
-        fi
+          # Get previous tag (excluding the current one)
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 "$CURRENT_TAG"^ 2>/dev/null || echo "")
 
-        # Create release notes file
-        echo "## Changes since $PREVIOUS_TAG" > release_notes.md
-        echo "" >> release_notes.md
-        echo "$CHANGELOG" >> release_notes.md
-        echo "" >> release_notes.md
-        echo "### Full commit list" >> release_notes.md
-        echo "\`\`\`" >> release_notes.md
-        echo "$CHANGELOG" >> release_notes.md
-        echo "\`\`\`" >> release_notes.md
+          if [ -z "$PREVIOUS_TAG" ]; then
+            # If no previous tag found, get all commits from the beginning
+            echo "No previous tag found, showing all commits"
+            CHANGELOG=$(git log --oneline --pretty=format:"- %s (%h)" HEAD)
+          else
+            echo "Previous tag: $PREVIOUS_TAG"
+            # Get commits between previous tag and current tag
+            CHANGELOG=$(git log --oneline --pretty=format:"- %s (%h)" "$PREVIOUS_TAG".."$CURRENT_TAG")
+          fi
 
-        # Output release notes content
-        RELEASE_NOTES=$(cat release_notes.md)
-        echo "release_notes<<EOF" >> $GITHUB_OUTPUT
-        echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
-        echo "EOF" >> $GITHUB_OUTPUT
+          # Create release notes file
+          echo "## Changes since $PREVIOUS_TAG" > release_notes.md
+          echo "" >> release_notes.md
+          echo "$CHANGELOG" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Full commit list" >> release_notes.md
+          echo "\`\`\`" >> release_notes.md
+          echo "$CHANGELOG" >> release_notes.md
+          echo "\`\`\`" >> release_notes.md
 
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: release_assets/*.zip
-        draft: false
-        prerelease: false
-        body: ${{ steps.generate_release_notes.outputs.release_notes }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Output release notes content
+          RELEASE_NOTES=$(cat release_notes.md)
+          echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release_assets/*.zip
+          draft: false
+          prerelease: false
+          body: ${{ steps.generate_release_notes.outputs.release_notes }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
