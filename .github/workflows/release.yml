@@ -125,7 +125,7 @@ jobs:
               fi
             else
               # Linux/macOS: look for executable file with same name as app
-              exe_path=$(find . -type f -name "${app}" -perm +111 | head -1)
+              exe_path=$(find . -type f -name "${app}" -exec test -x {} \; -print | head -1)
             fi
 
             if [ -n "$exe_path" ] && [ -f "$exe_path" ]; then
