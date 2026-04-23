@@ -19,11 +19,8 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE hInstPrev, PSTR cmdline, int cmd
 #endif
 """
 
-
 icon_template = """101 ICON {}
 """
-
-
 
 
 def add_url(
