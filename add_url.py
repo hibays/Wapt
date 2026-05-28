@@ -46,19 +46,16 @@ def add_url(
 		icp = Path(icon_path)
 		icon_output = app_dir / f"{cf_name}.ico"
 
-		if icp.suffix != ".ico":
-			try:
-				err_info = sp.check_output(
-				    f"""ffmpeg -hide_banner -i {icp.absolute()} -filter_complex "split=6[a][b][c][d][e][f];[a]scale=16:16[b];[b]scale=32:32[c];[c]scale=48:48[d];[d]scale=64:64[e];[e]scale=128:128[f];[f]scale=256:256[g]" -map "[b]" -map "[c]" -map "[d]" -map "[e]" -map "[f]" -map "[g]" -c:v bmp {icon_output.absolute()}"""
-				)
-				if b'Error' in err_info.split(b'\n')[-1]:
-					print('FFMpeg ran into error: %s' % err_info)
-			except sp.CalledProcessError:
-				print(
-				    "Failed to convert icon to .ico format, please check ffmpeg installation"
-				)
-		else:
-			icon_output.write_bytes(icp.read_bytes())
+		try:
+			err_info = sp.check_output(
+			    f"""ffmpeg -hide_banner -i {icp.absolute()} -filter_complex "split=6[a][b][c][d][e][f];[a]scale=16:16[b];[b]scale=32:32[c];[c]scale=48:48[d];[d]scale=64:64[e];[e]scale=128:128[f];[f]scale=256:256[g]" -map "[b]" -map "[c]" -map "[d]" -map "[e]" -map "[f]" -map "[g]" -c:v bmp {icon_output.absolute()}"""
+			)
+			if b'Error' in err_info.split(b'\n')[-1]:
+				print('FFMpeg ran into error: %s' % err_info)
+		except sp.CalledProcessError:
+			print(
+			    "Failed to convert icon to .ico format, please check ffmpeg installation"
+			)
 
 
 def main():
