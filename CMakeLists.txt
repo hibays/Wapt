@@ -21,7 +21,7 @@ project(WebUI-Impl)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-add_subdirectory(thirdlib/webui-2f7e622 EXCLUDE_FROM_ALL)
+add_subdirectory(thirdlib/webui-dadf417 EXCLUDE_FROM_ALL)
 
 include(cmake/WebUIApp.cmake)
 discover_webui_apps()

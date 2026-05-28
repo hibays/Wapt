@@ -81,6 +81,10 @@ fn addLinkerFlags(
     const is_windows = webui_target.os.tag == .windows;
     const is_darwin = webui_target.os.tag == .macos;
     const debug = webui.root_module.optimize.? == .Debug;
+    // In Zig 0.16, methods like addCSourceFile/linkLibC/addIncludePath/linkSystemLibrary/
+    // linkFramework/addCMacro were removed from *Compile and live only on *Module.
+    // Routing every call through `mod` keeps the build script compatible with 0.14/0.15/0.16.
+    const mod = webui.root_module;
 
     // Prepare compiler flags.
     const no_tls_flags: []const []const u8 = &.{"-DNO_SSL"};
@@ -93,24 +97,24 @@ fn addLinkerFlags(
     };
 
     if (debug and enable_webui_log) {
-        webui.root_module.addCMacro("WEBUI_LOG", "");
+        mod.addCMacro("WEBUI_LOG", "");
     }
-    webui.addCSourceFile(.{
+    mod.addCSourceFile(.{
         .file = b.path("src/webui.c"),
         .flags = if (enable_tls) tls_flags else no_tls_flags,
     });
 
     // Add Win32 WebView2 C++ support on Windows
     if (is_windows) {
-        webui.addCSourceFile(.{
+        mod.addCSourceFile(.{
             .file = b.path("src/webview/win32_wv2.cpp"),
             .flags = if (enable_tls) tls_flags else no_tls_flags,
         });
-        webui.linkLibCpp();
+        mod.link_libcpp = true;
     }
 
     const civetweb_debug = debug and debug_dependencies.contains(.civetweb);
-    webui.addCSourceFile(.{
+    mod.addCSourceFile(.{
         .file = b.path("src/civetweb/civetweb.c"),
         .flags = if (enable_tls and !civetweb_debug)
             civetweb_flags ++ tls_flags ++ .{"-DNDEBUG"}
@@ -121,34 +125,34 @@ fn addLinkerFlags(
         else
             civetweb_flags ++ .{"-DUSE_WEBSOCKET"} ++ no_tls_flags,
     });
-    webui.linkLibC();
-    webui.addIncludePath(b.path("include"));
+    mod.link_libc = true;
+    mod.addIncludePath(b.path("include"));
     webui.installHeader(b.path("include/webui.h"), "webui.h");
     if (is_darwin) {
-        webui.addCSourceFile(.{
+        mod.addCSourceFile(.{
             .file = b.path("src/webview/wkwebview.m"),
             .flags = &.{},
         });
-        webui.linkFramework("Cocoa");
-        webui.linkFramework("WebKit");
+        mod.linkFramework("Cocoa", .{});
+        mod.linkFramework("WebKit", .{});
     } else if (is_windows) {
-        webui.linkSystemLibrary("ws2_32");
-        webui.linkSystemLibrary("ole32");
+        mod.linkSystemLibrary("ws2_32", .{});
+        mod.linkSystemLibrary("ole32", .{});
         if (webui_target.abi == .msvc) {
-            webui.linkSystemLibrary("Advapi32");
-            webui.linkSystemLibrary("Shell32");
-            webui.linkSystemLibrary("user32");
+            mod.linkSystemLibrary("Advapi32", .{});
+            mod.linkSystemLibrary("Shell32", .{});
+            mod.linkSystemLibrary("user32", .{});
         }
         if (enable_tls) {
-            webui.linkSystemLibrary("bcrypt");
+            mod.linkSystemLibrary("bcrypt", .{});
         }
     }
     if (enable_tls) {
-        webui.linkSystemLibrary("ssl");
-        webui.linkSystemLibrary("crypto");
+        mod.linkSystemLibrary("ssl", .{});
+        mod.linkSystemLibrary("crypto", .{});
     }
 
-    for (webui.root_module.link_objects.items) |lo| {
+    for (mod.link_objects.items) |lo| {
         switch (lo) {
             .c_source_file => |csf| {
                 log(.debug, .WebUI, "{s} linker flags:\n", .{
@@ -165,60 +169,88 @@ fn addLinkerFlags(
 
 fn build_examples(b: *Build, webui: *Compile) !void {
     const build_examples_step = b.step("examples", "builds the library and its examples");
+
+    // Iterate examples/C. Zig 0.16 removed std.fs.cwd() and reworked Dir/Iterator
+    // to require an Io instance, so split the open+iterate path by version while
+    // sharing the per-example wiring below.
+    if (comptime builtin.zig_version.minor >= 16) {
+        const io = b.graph.io;
+        var examples_dir = b.build_root.handle.openDir(
+            io,
+            "examples/C",
+            .{ .iterate = true },
+        ) catch |e| switch (e) {
+            error.FileNotFound => return,
+            else => return e,
+        };
+        defer examples_dir.close(io);
+
+        var paths = examples_dir.iterate();
+        while (try paths.next(io)) |val| {
+            if (val.kind != .directory) continue;
+            try add_example(b, webui, build_examples_step, val.name);
+        }
+    } else {
+        const examples_path = b.path("examples/C").getPath(b);
+        var examples_dir = std.fs.cwd().openDir(
+            examples_path,
+            .{ .iterate = true },
+        ) catch |e| switch (e) {
+            error.FileNotFound => return,
+            else => return e,
+        };
+        defer examples_dir.close();
+
+        var paths = examples_dir.iterate();
+        while (try paths.next()) |val| {
+            if (val.kind != .directory) continue;
+            try add_example(b, webui, build_examples_step, val.name);
+        }
+    }
+}
+
+fn add_example(
+    b: *Build,
+    webui: *Compile,
+    build_examples_step: *Build.Step,
+    example_name: []const u8,
+) !void {
     const target = webui.root_module.resolved_target.?;
     const optimize = webui.root_module.optimize.?;
 
-    const examples_path = b.path("examples/C").getPath(b);
-    var examples_dir = std.fs.cwd().openDir(
-        examples_path,
-        .{ .iterate = true },
-    ) catch |e| switch (e) {
-        // Do not attempt building examples if directory does not exist.
-        error.FileNotFound => return,
-        else => return e,
-    };
-    defer examples_dir.close();
-
-    var paths = examples_dir.iterate();
-    while (try paths.next()) |val| {
-        if (val.kind != .directory) {
-            continue;
-        }
-        const example_name = val.name;
-
-        const exe = b.addExecutable(if (builtin.zig_version.minor == 14) .{
-            .name = example_name,
+    const exe = b.addExecutable(if (builtin.zig_version.minor == 14) .{
+        .name = example_name,
+        .target = target,
+        .optimize = optimize,
+    } else .{
+        .name = example_name,
+        .root_module = b.createModule(.{
             .target = target,
             .optimize = optimize,
-        } else .{
-            .name = example_name,
-            .root_module = b.createModule(.{
-                .target = target,
-                .optimize = optimize,
-                .pic = true,
-            }),
-        });
-        const path = try std.fmt.allocPrint(b.allocator, "examples/C/{s}/main.c", .{example_name});
-        defer b.allocator.free(path);
+            .pic = true,
+        }),
+    });
+    const path = try std.fmt.allocPrint(b.allocator, "examples/C/{s}/main.c", .{example_name});
+    defer b.allocator.free(path);
 
-        exe.addCSourceFile(.{ .file = b.path(path), .flags = &.{} });
-        exe.linkLibrary(webui);
+    // Route through root_module so Zig 0.16 (which removed these methods from *Compile) keeps working.
+    exe.root_module.addCSourceFile(.{ .file = b.path(path), .flags = &.{} });
+    exe.root_module.linkLibrary(webui);
 
-        const exe_install = b.addInstallArtifact(exe, .{});
-        const exe_run = b.addRunArtifact(exe);
-        const step_name = try std.fmt.allocPrint(b.allocator, "run_{s}", .{example_name});
-        defer b.allocator.free(step_name);
-        const step_desc = try std.fmt.allocPrint(b.allocator, "run example {s}", .{example_name});
-        defer b.allocator.free(step_desc);
+    const exe_install = b.addInstallArtifact(exe, .{});
+    const exe_run = b.addRunArtifact(exe);
+    const step_name = try std.fmt.allocPrint(b.allocator, "run_{s}", .{example_name});
+    defer b.allocator.free(step_name);
+    const step_desc = try std.fmt.allocPrint(b.allocator, "run example {s}", .{example_name});
+    defer b.allocator.free(step_desc);
 
-        const cwd = try std.fmt.allocPrint(b.allocator, "src/examples/{s}", .{example_name});
-        defer b.allocator.free(cwd);
-        exe_run.setCwd(b.path(cwd));
+    const cwd = try std.fmt.allocPrint(b.allocator, "src/examples/{s}", .{example_name});
+    defer b.allocator.free(cwd);
+    exe_run.setCwd(b.path(cwd));
 
-        exe_run.step.dependOn(&exe_install.step);
-        build_examples_step.dependOn(&exe_install.step);
-        b.step(step_name, step_desc).dependOn(&exe_run.step);
-    }
+    exe_run.step.dependOn(&exe_install.step);
+    build_examples_step.dependOn(&exe_install.step);
+    b.step(step_name, step_desc).dependOn(&exe_run.step);
 }
 
 /// Function to runtime-scope log levels based on build flag, for all scopes.

@@ -6013,8 +6013,8 @@ static const char* _webui_generate_js_bridge(_webui_window_t* win, struct mg_con
         }
         if (win->token == 0) {
             win->token = _webui_generate_random_uint32();
-            token = win->token;
         }
+        token = win->token;
     }
     else {
         // Multi client mode
@@ -11138,12 +11138,6 @@ static void _webui_connection_remove(_webui_window_t* win, struct mg_connection*
             #ifdef WEBUI_LOG
             _webui_log_debug("[Core]\t\t_webui_connection_remove() -> Removing client #%zu \n", i);
             #endif
-            // Reset Token
-            if (!_webui.config.multi_client) {
-                if (_webui_mutex_is_multi_client_token_valid(win, WEBUI_MUTEX_GET_STATUS, i)) {
-                    win->token = 0;
-                }
-            }
             // Clear
             if (win->single_client == client) {
                 win->single_client = NULL;
