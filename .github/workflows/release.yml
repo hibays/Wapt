@@ -73,7 +73,7 @@ jobs:
           mkdir build
           cd build
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            cmake .. -G "${{ matrix.cmake_generator }}" -A "${{ matrix.cmake_arch }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+            cmake .. -G "${{ matrix.cmake_generator }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
           else
             if [ "${{ matrix.os }}" = "macos-latest" ]; then
               cmake .. -G "${{ matrix.cmake_generator }}" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
