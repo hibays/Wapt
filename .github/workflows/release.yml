@@ -14,12 +14,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ windows-latest, ubuntu-latest, macos-latest ]
+        os: [windows-latest, ubuntu-latest, macos-latest]
         include:
           - os: windows-latest
             zip_suffix: windows_amd_x64
             exe_ext: .exe
-            cmake_generator: Visual Studio 17 2022
+            cmake_generator: Ninja
             cmake_arch: x64
           - os: ubuntu-latest
             zip_suffix: ubuntu_amd_x64
@@ -164,7 +164,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history for git describe
+          fetch-depth: 0 # Fetch all history for git describe
 
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4

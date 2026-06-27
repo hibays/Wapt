@@ -43,12 +43,12 @@ def add_url(
 		(app_dir / f"{cf_name}.rc").write_text(rc_code)
 
 		# Process icon file
-		icp = Path(icon_path)
-		icon_output = app_dir / f"{cf_name}.ico"
+		icp = Path(icon_path).resolve().absolute()
+		icon_output = (app_dir / f"{cf_name}.ico").resolve().absolute()
 
 		try:
 			err_info = sp.check_output(
-			    f"""ffmpeg -hide_banner -i {icp.absolute()} -filter_complex "split=6[a][b][c][d][e][f];[a]scale=16:16[b];[b]scale=32:32[c];[c]scale=48:48[d];[d]scale=64:64[e];[e]scale=128:128[f];[f]scale=256:256[g]" -map "[b]" -map "[c]" -map "[d]" -map "[e]" -map "[f]" -map "[g]" -c:v bmp {icon_output.absolute()}"""
+			    f"""ffmpeg -hide_banner -i {icp} -filter_complex "split=6[a][b][c][d][e][f];[a]scale=16:16[b];[b]scale=32:32[c];[c]scale=48:48[d];[d]scale=64:64[e];[e]scale=128:128[f];[f]scale=256:256[g]" -map "[b]" -map "[c]" -map "[d]" -map "[e]" -map "[f]" -map "[g]" -c:v bmp {icon_output}"""
 			)
 			if b'Error' in err_info.split(b'\n')[-1]:
 				print('FFMpeg ran into error: %s' % err_info)
